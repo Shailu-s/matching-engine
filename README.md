@@ -1,26 +1,39 @@
 # Matching Engine
 
 In-memory limit order book and matching engine in Go. Price-time priority,
-limit and market orders, O(1) cancel, one owner goroutine per symbol, live
-order book and trade stream over Server-Sent Events.
+limit, market and IOC orders, O(1) cancel, one owner goroutine per symbol,
+live order book and trade stream over Server-Sent Events, and demo accounts
+that start with $10,000 and trade against a liquidity bot.
 
-## Benchmarks (Apple M4, Go 1.25)
+**Live demo:** https://matching-engine-ydj6.onrender.com (free tier, the
+first load after idle takes ~50 s). Opening the page runs a live benchmark on
+the server.
 
-| Path | Cost | Throughput |
-|---|---|---|
-| Raw book `Submit` (single core, 0 allocs/op) | 120-175 ns/order | ~5.7-8M orders/sec |
-| Full engine path (concurrent clients -> channel -> owner goroutine -> reply) | 0.8-1.0 µs/order | ~1M orders/sec |
+## Benchmarks (Apple M4, 10 cores, Go 1.25.7)
+
+![go test -bench output](docs/benchmark.png)
+
+| Path | Median of 5 runs | Range | Throughput |
+|---|---|---|---|
+| Raw book `Submit`, one thread, 0 allocs/op | 136 ns/order | 132-213 ns | **~7.4M orders/sec** |
+| Full engine path: concurrent clients -> channel -> book goroutine -> reply | 983 ns/order | 829-1155 ns | **~1.0M orders/sec** |
 
 Order flow: random limits clustered +/-50 ticks around mid (most cross and
 trade) plus 5% market orders. Reproduce with:
 
 ```
-go test -bench . -benchmem ./engine/
+go test -run '^$' -bench . -benchmem -count=5 ./engine/
 ```
 
-The live demo has a **Run benchmark** button that pushes 200,000 orders
-through a fresh book on the server it is running on and reports the measured
-orders/sec.
+**Live benchmark on the demo:** on page load the server pushes 500,000 random
+orders through a fresh book in 10 batches of 50,000, times each batch on its
+own and streams the results to the page. The headline is the median batch.
+The free host is a shared fraction of one core, so its number is lower than
+the laptop's.
+
+**Scaling:** one market is single-threaded by design, because matching order
+N+1 depends on order N. More cores do not make one book faster; they let more
+markets run side by side, so total throughput grows with cores.
 
 ## Design
 
@@ -39,21 +52,45 @@ orders/sec.
   client misses events and resyncs from the depth snapshot in the next one.
   The SSE handler coalesces bursts to ~10 frames/sec per client.
 
+## Demo accounts
+
+Pick a username or continue as guest and you get $10,000 of demo USD. Lot
+sizes are 0.001 BTC, 0.01 ETH and 0.1 SOL so small accounts can trade.
+
+- **Before the book (risk #1):** `Reserve` holds the cash or coins an order
+  could use and registers it, so a fill can never arrive for an unknown order.
+- **After matching (risk #2):** the engine calls a `TradeHook` on the symbol's
+  goroutine for every fill, maker and taker, before replying. Unlike the
+  browser broadcast it never drops events, so it is where balances settle.
+- Buys are held at the limit price and refunded the difference when they fill
+  at the maker's better price. Market orders become IOC limits 5% through the
+  touch, so the hold is bounded.
+- Cash is integer milli-cents, so price x lots is exact in every market.
+- Accounts live in memory and reset on restart. The benchmark uses a bare
+  book, so the account layer is not in the measured path.
+
 ## Tests
 
 `go test -race ./...` covers price priority, time priority, maker-price
-execution, market orders, cancel, rejects, and a 50,000-order randomised run
-that checks lot conservation and that the book is never left crossed.
+execution, market and IOC orders, cancel, rejects, a 50,000-order randomised
+run that checks lot conservation and that the book is never left crossed,
+that the trade hook sees every fill before the reply, and account tests:
+maker-price refunds, no overspending or overselling, IOC and cancel releasing
+holds, and 5,000 random orders across 20 accounts with total cash and coins
+unchanged.
 
 ## API
 
 | Method | Path | |
 |---|---|---|
-| POST | `/api/orders` | `{"symbol","side":"buy|sell","type":"limit|market","price":<cents>,"qty"}` |
-| DELETE | `/api/orders/{symbol}/{id}` | cancel |
+| POST | `/api/session` | `{"name"}` -> `{"token","account"}`; send the token as `X-Session` |
+| GET | `/api/account` | balances, positions, open orders, fills, P/L |
+| POST | `/api/orders` | `{"symbol","side":"buy|sell","type":"limit|market","price":<cents per coin>,"qty":<lots>}` |
+| DELETE | `/api/orders/{id}` | cancel one of your orders |
 | GET | `/api/depth/{symbol}` | top 15 levels |
 | GET | `/api/stream/{symbol}` | SSE: depth + trades |
-| POST | `/api/benchmark?n=200000` | in-process throughput run |
+| GET | `/api/markets` | symbols and lot sizes |
+| GET | `/api/benchmark` | live run, streamed as NDJSON (one line per batch, then a summary) |
 
 ## Run
 

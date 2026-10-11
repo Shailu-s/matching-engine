@@ -5,27 +5,74 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Matching Engine</title>
 <style>
-:root{--bg:#0b0e11;--panel:#151a21;--line:#232a33;--text:#e6e8ea;--mute:#8a94a0;--buy:#16c784;--sell:#ea3943;--acc:#f0b90b}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
-header{display:flex;gap:16px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-header h1{font-size:16px;margin:0;font-weight:600}header .stat{color:var(--mute)}header .stat b{color:var(--text)}
-.tabs button{background:none;border:1px solid var(--line);color:var(--mute);padding:6px 10px;border-radius:6px;cursor:pointer;font:inherit}
+:root{--bg:#0b0e11;--panel:#151a21;--panel2:#1b2129;--line:#232a33;--text:#e6e8ea;--mute:#8a94a0;--buy:#16c784;--sell:#ea3943;--acc:#f0b90b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.mono,td,input,.num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+header{display:flex;gap:14px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.02em}
+.stat{color:var(--mute);font-size:13px}.stat b{color:var(--text);font-family:ui-monospace,Menlo,monospace}
+.tabs{display:flex;gap:6px}
+.tabs button{background:none;border:1px solid var(--line);color:var(--mute);padding:5px 10px;border-radius:6px;cursor:pointer;font:inherit;font-size:13px}
 .tabs button.on{color:var(--acc);border-color:var(--acc)}
-main{display:grid;grid-template-columns:1fr 1fr 320px;gap:12px;padding:12px 16px}
-@media(max-width:900px){main{grid-template-columns:1fr}}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;min-width:0}
-.panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);margin:0 0 8px}
-table{width:100%;border-collapse:collapse}td,th{padding:2px 4px;text-align:right;position:relative}th{color:var(--mute);font-weight:400;font-size:12px}
+.user{margin-left:auto;display:flex;gap:10px;align-items:center;font-size:13px}
+.user a{color:var(--mute);cursor:pointer;text-decoration:underline}
+.wrap{padding:12px 16px;display:grid;gap:12px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.panel h2{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--mute);margin:0 0 10px;font-weight:600}
+/* benchmark hero */
+.hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,.9fr);gap:18px;align-items:center}
+@media(max-width:1000px){.hero{grid-template-columns:1fr}}
+.big{font:800 44px/1 ui-monospace,Menlo,monospace;color:var(--acc);letter-spacing:-.02em}
+.big small{font-size:15px;color:var(--mute);font-weight:500;letter-spacing:0}
+.bars{display:flex;gap:6px;align-items:flex-end;height:86px;border-bottom:1px solid var(--line);padding-bottom:2px}
+.bars div{flex:1;background:var(--panel2);border-radius:3px 3px 0 0;height:4px;transition:height .35s ease,background .35s}
+.bars div.on{background:var(--acc)}
+.barlbl{display:flex;justify-content:space-between;color:var(--mute);font-size:11px;margin-top:4px}
+.ref{font-size:13px;color:var(--mute);border-left:1px solid var(--line);padding-left:16px}
+.ref b{color:var(--text)}
+@media(max-width:1000px){.ref{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:10px}}
+.ghost{background:none;border:1px solid var(--line);color:var(--text);padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit;font-size:13px}
+.ghost:disabled{opacity:.5;cursor:default}
+/* trading grid */
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 340px;gap:12px}
+@media(max-width:1000px){.grid{grid-template-columns:1fr}}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media(max-width:1000px){.grid2{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:3px 6px;text-align:right;position:relative;white-space:nowrap}
+th{color:var(--mute);font-weight:400;font-size:11px;font-family:inherit}
 td:first-child,th:first-child{text-align:left}
-.bar{position:absolute;top:1px;bottom:1px;right:0;opacity:.15;z-index:0}td span{position:relative;z-index:1}
-.ask{color:var(--sell)}.bid{color:var(--buy)}.spread{text-align:center;color:var(--mute);padding:6px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:4px 0}
-form{display:grid;gap:8px}label{color:var(--mute);font-size:12px}input,select{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);padding:8px;border-radius:6px;font:inherit}
+.bar{position:absolute;top:1px;bottom:1px;right:0;opacity:.14;z-index:0}td span{position:relative;z-index:1}
+.ask{color:var(--sell)}.bid{color:var(--buy)}
+tr[data-p]{cursor:pointer}tr[data-p]:hover{background:var(--panel2)}
+.spread{text-align:center;color:var(--mute);padding:6px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:4px 0;font-size:13px}
+.scroll{max-height:440px;overflow:auto}
+.sidebtns{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:10px}
+.sidebtns button{background:none;border:0;color:var(--mute);padding:9px;font:inherit;font-weight:600;cursor:pointer}
+.sidebtns button.on.buy{background:var(--buy);color:#fff}.sidebtns button.on.sell{background:var(--sell);color:#fff}
+form{display:grid;gap:9px}
+label{color:var(--mute);font-size:12px;display:flex;justify-content:space-between}
+input,select{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:6px;font-size:14px}
+select{font-family:inherit}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.btn{border:0;padding:10px;border-radius:6px;font:inherit;font-weight:600;cursor:pointer;color:#fff}
+.pct{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.pct button{background:var(--panel2);border:1px solid var(--line);color:var(--mute);border-radius:5px;padding:4px;font-size:12px;cursor:pointer}
+.btn{border:0;padding:11px;border-radius:7px;font:inherit;font-weight:700;cursor:pointer;color:#fff;width:100%}
 .btn.buy{background:var(--buy)}.btn.sell{background:var(--sell)}.btn.acc{background:var(--acc);color:#111}
-#msg{min-height:18px;color:var(--mute);font-size:12px;word-break:break-word}
-#tape{max-height:420px;overflow:auto}
-.big{font-size:28px;font-weight:700;color:var(--acc)}.mute{color:var(--mute);font-size:12px}
+.est{color:var(--mute);font-size:12px;display:flex;justify-content:space-between}
+#msg{min-height:18px;font-size:12px;word-break:break-word}
+.ok{color:var(--buy)}.err{color:var(--sell)}.mute{color:var(--mute);font-size:12px}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.kpi{background:var(--panel2);border-radius:8px;padding:8px 10px}.kpi .v{font:700 17px ui-monospace,Menlo,monospace}.kpi .k{color:var(--mute);font-size:11px}
+.x{background:none;border:1px solid var(--line);color:var(--mute);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:12px}
+.empty{color:var(--mute);font-size:12px;text-align:center;padding:14px 0}
+footer{padding:4px 16px 28px;color:var(--mute);font-size:13px;max-width:980px}
+footer b{color:var(--text)}
+/* login */
+#login{position:fixed;inset:0;background:rgba(5,7,9,.82);display:none;align-items:center;justify-content:center;z-index:10;padding:16px}
+#login .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px;width:100%;max-width:380px;display:grid;gap:12px}
+#login h3{margin:0;font-size:18px}
 </style>
 </head>
 <body>
@@ -35,82 +82,236 @@ form{display:grid;gap:8px}label{color:var(--mute);font-size:12px}input,select{wi
   <span class="stat">orders <b id="sOrders">0</b></span>
   <span class="stat">trades <b id="sTrades">0</b></span>
   <span class="stat" id="conn">connecting…</span>
+  <div class="user" id="user"></div>
 </header>
-<main>
+
+<div class="wrap">
   <section class="panel">
-    <h2>Order book · price-time priority</h2>
-    <table><thead><tr><th>Price</th><th>Size</th><th>Orders</th></tr></thead><tbody id="asks"></tbody></table>
-    <div class="spread" id="spread">–</div>
-    <table><tbody id="bids"></tbody></table>
+    <div class="hero">
+      <div>
+        <h2>Live benchmark · runs when you open this page</h2>
+        <div class="big" id="bNum">–<small> orders/sec</small></div>
+        <div class="mute" id="bSub" style="margin-top:8px">Firing 500,000 random orders into a fresh in-memory book on this server…</div>
+        <div style="margin-top:10px"><button class="ghost" id="bRun" disabled>Run again</button></div>
+      </div>
+      <div>
+        <div class="bars" id="bars"></div>
+        <div class="barlbl"><span>10 batches × 50,000 orders, each timed on its own</span><span id="bRow"></span></div>
+      </div>
+      <div class="ref">
+        <div style="margin-bottom:6px">Same code on a laptop (Apple M4, <span class="mono">go test -bench</span>):</div>
+        <div><b>~7.4M orders/sec</b> matching core, one thread (136 ns/order)</div>
+        <div><b>~1.0M orders/sec</b> full engine path: concurrent clients → channel → book goroutine → reply</div>
+      </div>
+    </div>
   </section>
-  <section class="panel">
-    <h2>Trades</h2>
-    <div id="tape"><table><thead><tr><th>Time</th><th>Price</th><th>Qty</th></tr></thead><tbody id="trades"></tbody></table></div>
-  </section>
-  <aside style="display:grid;gap:12px;align-content:start">
+
+  <div class="grid">
     <section class="panel">
-      <h2>Place order</h2>
-      <form id="f">
-        <div class="row">
-          <div><label>Type</label><select id="type"><option value="limit">Limit</option><option value="market">Market</option></select></div>
-          <div><label>Qty</label><input id="qty" type="number" min="1" value="10"></div>
-        </div>
-        <div><label>Price (USD)</label><input id="price" type="number" step="0.01"></div>
-        <div class="row">
-          <button class="btn buy" type="button" data-side="buy">Buy</button>
-          <button class="btn sell" type="button" data-side="sell">Sell</button>
-        </div>
-        <div id="msg"></div>
-      </form>
+      <h2>Order book · price-time priority</h2>
+      <table><thead><tr><th>Price (USD)</th><th id="hSize">Size</th><th>Orders</th></tr></thead><tbody id="asks"></tbody></table>
+      <div class="spread" id="spread">–</div>
+      <table><tbody id="bids"></tbody></table>
     </section>
     <section class="panel">
-      <h2>Live benchmark</h2>
-      <p class="mute">Runs 200,000 synthetic orders through a fresh in-memory book on this server and measures throughput.</p>
-      <button class="btn acc" id="bench" style="width:100%">Run benchmark</button>
-      <div id="benchOut" style="margin-top:10px"></div>
+      <h2>Market trades</h2>
+      <div class="scroll"><table><thead><tr><th>Time</th><th>Price</th><th id="hQty">Qty</th></tr></thead><tbody id="trades"></tbody></table></div>
     </section>
-  </aside>
-</main>
+    <aside style="display:grid;gap:12px;align-content:start">
+      <section class="panel">
+        <h2>Place order</h2>
+        <div class="sidebtns"><button class="buy on" data-side="buy">Buy</button><button class="sell" data-side="sell">Sell</button></div>
+        <form id="f" onsubmit="return false">
+          <div class="row">
+            <div><label>Type</label><select id="type"><option value="market">Market</option><option value="limit">Limit</option></select></div>
+            <div><label><span>Amount</span><span id="unit"></span></label><input id="qty" type="number" min="0" step="any"></div>
+          </div>
+          <div id="pxRow" style="display:none"><label><span>Limit price (USD)</span><span class="mute">click a book row</span></label><input id="price" type="number" step="0.01"></div>
+          <div class="pct"><button type="button" data-p="25">25%</button><button type="button" data-p="50">50%</button><button type="button" data-p="75">75%</button><button type="button" data-p="100">Max</button></div>
+          <div class="est"><span>Available</span><span class="mono" id="avail">–</span></div>
+          <div class="est"><span>Est. total</span><span class="mono" id="est">–</span></div>
+          <button class="btn buy" id="go" type="button">Buy</button>
+          <div id="msg"></div>
+        </form>
+      </section>
+      <section class="panel">
+        <h2>Your account</h2>
+        <div class="kpis">
+          <div class="kpi"><div class="k">Equity</div><div class="v" id="kEq">–</div></div>
+          <div class="kpi"><div class="k">P/L vs $10,000</div><div class="v" id="kPnl">–</div></div>
+          <div class="kpi"><div class="k">USD available</div><div class="v" id="kCash">–</div></div>
+          <div class="kpi"><div class="k">USD in open orders</div><div class="v" id="kHeld">–</div></div>
+        </div>
+        <table><thead><tr><th>Asset</th><th>Amount</th><th>Value</th></tr></thead><tbody id="pos"></tbody></table>
+      </section>
+    </aside>
+  </div>
+
+  <div class="grid2">
+    <section class="panel">
+      <h2>Your open orders</h2>
+      <div class="scroll" style="max-height:260px"><table><thead><tr><th>Market</th><th>Side</th><th>Price</th><th>Filled</th><th></th></tr></thead><tbody id="open"></tbody></table></div>
+    </section>
+    <section class="panel">
+      <h2>Your fills</h2>
+      <div class="scroll" style="max-height:260px"><table><thead><tr><th>Time</th><th>Market</th><th>Side</th><th>Price</th><th>Amount</th><th>Role</th></tr></thead><tbody id="fills"></tbody></table></div>
+    </section>
+  </div>
+</div>
+
+<footer>
+  <b>This is a standalone in-memory matching engine in Go</b>: price-time priority, one thread per market. Opening this page fires random orders into a fresh book and benchmarks it live. The number above comes from one shared free-tier CPU core. Markets don't share state, so total throughput grows with cores by running each market on its own core. Demo accounts and the liquidity bot live in memory and reset when the server restarts.
+</footer>
+
+<div id="login"><div class="card">
+  <h3>Start trading</h3>
+  <div class="mute">You get <b style="color:var(--text)">$10,000</b> in demo USD. Trade BTC, ETH and SOL against a liquidity bot and watch your orders match.</div>
+  <input id="uname" placeholder="Pick a username" maxlength="24" autocomplete="off">
+  <button class="btn acc" id="startU">Start</button>
+  <button class="ghost" id="startG">Continue as guest</button>
+  <div class="mute">Accounts live in memory and reset when the server restarts.</div>
+</div></div>
+
 <script>
-const SYMS=["BTC-USD","ETH-USD","SOL-USD"];let sym=SYMS[0],es=null,tape=[];
+const SYMS=["BTC-USD","ETH-USD","SOL-USD"],LPC={"BTC-USD":1000,"ETH-USD":100,"SOL-USD":10};
+let sym=SYMS[0],es=null,tape=[],side="buy",book={bids:[],asks:[]},acct=null,tok=null;
+try{tok=localStorage.getItem("me_tok")}catch{}
 const $=id=>document.getElementById(id);
-const fmt=c=>(c/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const coin=s=>s.split("-")[0];
+const dec=s=>String(LPC[s]).length-1;
+const usd=(n,d=2)=>"$"+n.toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
+const px=c=>(c/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const lots2c=(l,s)=>(l/LPC[s]).toFixed(dec(s));
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const api=(path,opt={})=>fetch(path,{...opt,headers:{"Content-Type":"application/json",...(tok?{"X-Session":tok}:{}),...(opt.headers||{})}});
+
+/* ---------- live benchmark ---------- */
+const bars=$("bars");bars.innerHTML=Array.from({length:10},()=>"<div></div>").join("");
+function countUp(el,to){const t0=performance.now(),d=900;const f=t=>{const k=Math.min(1,(t-t0)/d),v=Math.round(to*(1-Math.pow(1-k,3)));el.innerHTML=v.toLocaleString()+"<small> orders/sec</small>";if(k<1)requestAnimationFrame(f)};requestAnimationFrame(f)}
+function showSummary(s,cached){
+  countUp($("bNum"),s.median_orders_per_sec);
+  $("bSub").innerHTML=`median of ${s.chunks} batches · ${s.median_ns_per_order} ns/order · best ${s.best_orders_per_sec.toLocaleString()}/s<br>${s.orders.toLocaleString()} orders, ${s.trades.toLocaleString()} trades · ${s.cpus} vCPU shared · ${s.go_version}`+(cached?`<br><span style="color:var(--acc)">another visitor was benchmarking, so this is their run from ${Math.round(s.age_sec)}s ago</span>`:"");
+}
+async function runBench(){
+  $("bRun").disabled=true;$("bNum").innerHTML="…<small> orders/sec</small>";$("bRow").textContent="";
+  [...bars.children].forEach(b=>{b.style.height="4px";b.classList.remove("on")});
+  $("bSub").textContent="Firing 500,000 random orders into a fresh in-memory book on this server…";
+  try{
+    const r=await fetch("/api/benchmark");
+    if((r.headers.get("content-type")||"").includes("application/json")){const j=await r.json();if(j.done)showSummary(j,true);else $("bSub").textContent=j.error;return}
+    const rd=r.body.getReader(),dc=new TextDecoder();let buf="",seen=[];
+    for(;;){const {value,done}=await rd.read();if(done)break;buf+=dc.decode(value,{stream:true});let i;
+      while((i=buf.indexOf("\n"))>=0){const line=buf.slice(0,i);buf=buf.slice(i+1);if(!line)continue;const m=JSON.parse(line);
+        if(m.done){showSummary(m,false);continue}
+        seen.push(m.orders_per_sec);const mx=Math.max(...seen)*1.1;
+        [...bars.children].forEach((b,k)=>{if(k<seen.length){b.style.height=Math.max(4,seen[k]/mx*84)+"px";b.classList.add("on")}});
+        $("bNum").innerHTML=m.orders_per_sec.toLocaleString()+"<small> orders/sec</small>";
+        $("bRow").textContent=`batch ${m.chunk}/10 · ${(m.ns/1e6).toFixed(1)} ms`;
+      }}
+  }catch(e){$("bSub").textContent="benchmark failed: "+e.message}
+  finally{$("bRun").disabled=false}
+}
+$("bRun").onclick=runBench;
+
+/* ---------- market data ---------- */
 function tabs(){$("tabs").innerHTML=SYMS.map(s=>`<button class="${s===sym?"on":""}" data-s="${s}">${s}</button>`).join("");
-  $("tabs").querySelectorAll("button").forEach(b=>b.onclick=()=>{sym=b.dataset.s;tape=[];$("price").value="";tabs();connect()})}
+  $("tabs").querySelectorAll("button").forEach(b=>b.onclick=()=>{sym=b.dataset.s;tape=[];$("price").value="";$("qty").value="";$("trades").innerHTML="";tabs();connect();form()})}
 function renderBook(d){
-  const asks=d.asks.slice(0,12).reverse(),bids=d.bids.slice(0,12);
+  book=d;const asks=d.asks.slice(0,12).reverse(),bids=d.bids.slice(0,12);
   const mx=Math.max(1,...d.asks.slice(0,12).map(l=>l.qty),...bids.map(l=>l.qty));
-  const row=(l,c)=>`<tr class="${c}" data-p="${l.price}"><td><span>${fmt(l.price)}</span></td><td><span>${l.qty}</span><div class="bar" style="width:${l.qty/mx*100}%;background:var(--${c==="ask"?"sell":"buy"})"></div></td><td><span>${l.orders}</span></td></tr>`;
+  const row=(l,c)=>`<tr class="${c}" data-p="${l.price}"><td><span>${px(l.price)}</span></td><td><span>${lots2c(l.qty,sym)}</span><div class="bar" style="width:${l.qty/mx*100}%;background:var(--${c==="ask"?"sell":"buy"})"></div></td><td><span>${l.orders}</span></td></tr>`;
   $("asks").innerHTML=asks.map(l=>row(l,"ask")).join("");$("bids").innerHTML=bids.map(l=>row(l,"bid")).join("");
   const ba=d.asks[0],bb=d.bids[0];
-  $("spread").textContent=ba&&bb?`spread ${fmt(ba.price-bb.price)}  ·  mid ${fmt((ba.price+bb.price)/2)}`:"–";
-  if(!$("price").value&&bb)$("price").value=(bb.price/100).toFixed(2);
-  document.querySelectorAll("tr[data-p]").forEach(r=>r.onclick=()=>$("price").value=(r.dataset.p/100).toFixed(2));
+  $("spread").textContent=ba&&bb?`spread ${px(ba.price-bb.price)}  ·  mid ${px((ba.price+bb.price)/2)}`:"–";
+  document.querySelectorAll("tr[data-p]").forEach(r=>r.onclick=()=>{$("type").value="limit";$("price").value=(r.dataset.p/100).toFixed(2);form()});
+  est();
 }
 function renderTrades(ts){
   const now=new Date().toLocaleTimeString();
   for(const t of ts)tape.unshift({...t,time:now});tape=tape.slice(0,60);
-  $("trades").innerHTML=tape.map(t=>`<tr class="${t.taker_side==="buy"?"bid":"ask"}"><td>${t.time}</td><td>${fmt(t.price)}</td><td>${t.qty}</td></tr>`).join("");
+  $("trades").innerHTML=tape.map(t=>`<tr class="${t.taker_side==="buy"?"bid":"ask"}"><td>${t.time}</td><td>${px(t.price)}</td><td>${lots2c(t.qty,sym)}</td></tr>`).join("");
 }
 async function connect(){
   if(es)es.close();
-  const d=await fetch(`/api/depth/${sym}`).then(r=>r.json());renderBook(d);
+  $("hSize").textContent=`Size (${coin(sym)})`;$("hQty").textContent=`Qty (${coin(sym)})`;
+  try{renderBook(await fetch(`/api/depth/${sym}`).then(r=>r.json()))}catch{}
   es=new EventSource(`/api/stream/${sym}`);
-  es.onopen=()=>$("conn").textContent="● live";es.onerror=()=>$("conn").textContent="reconnecting…";
+  es.onopen=()=>$("conn").innerHTML='<span class="ok">● live</span>';es.onerror=()=>$("conn").textContent="reconnecting…";
   es.onmessage=e=>{const ev=JSON.parse(e.data);renderBook(ev.depth);if(ev.trades&&ev.trades.length)renderTrades(ev.trades)};
 }
-document.querySelectorAll("[data-side]").forEach(b=>b.onclick=async()=>{
-  const body={symbol:sym,side:b.dataset.side,type:$("type").value,qty:+$("qty").value,price:Math.round(+$("price").value*100)};
-  const r=await fetch("/api/orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const j=await r.json();
-  $("msg").textContent=r.ok?`#${j.order_id} ${body.side} ${body.qty}: filled ${j.filled}${j.resting?", rest on book":""} (${j.trades.length} trades)`:`error: ${j.error}`;
+
+/* ---------- order entry ---------- */
+document.querySelectorAll(".sidebtns button").forEach(b=>b.onclick=()=>{side=b.dataset.side;document.querySelectorAll(".sidebtns button").forEach(x=>x.classList.toggle("on",x===b));form()});
+$("type").onchange=form;$("qty").oninput=est;$("price").oninput=est;
+function refPx(){ // cents per coin used for estimates
+  if($("type").value==="limit"&&+$("price").value>0)return Math.round(+$("price").value*100);
+  const l=side==="buy"?book.asks[0]:book.bids[0];return l?l.price:0;
+}
+function avail(){if(!acct)return 0;if(side==="buy")return acct.cash;const p=acct.positions.find(p=>p.symbol===sym);return p?p.coins:0}
+function form(){
+  $("pxRow").style.display=$("type").value==="limit"?"":"none";
+  if($("type").value==="limit"&&!$("price").value){const l=side==="buy"?book.bids[0]:book.asks[0];if(l)$("price").value=(l.price/100).toFixed(2)}
+  $("unit").textContent=coin(sym);$("qty").step=(1/LPC[sym]).toFixed(dec(sym));$("qty").placeholder="0."+"0".repeat(dec(sym)-1)+"1";
+  $("go").className="btn "+side;$("go").textContent=`${side==="buy"?"Buy":"Sell"} ${coin(sym)}`;est();
+}
+function est(){
+  const a=avail();$("avail").textContent=acct?(side==="buy"?usd(a):`${a.toFixed(dec(sym))} ${coin(sym)}`):"–";
+  const q=+$("qty").value,p=refPx();$("est").textContent=q>0&&p>0?usd(q*p/100):"–";
+}
+document.querySelectorAll(".pct button").forEach(b=>b.onclick=()=>{
+  const f=+b.dataset.p/100,p=refPx();let q;
+  if(side==="buy"){if(!p)return;q=avail()*f/(p/100)*($("type").value==="market"?0.95:1)}else q=avail()*f;
+  const l=Math.floor(q*LPC[sym]+1e-9);$("qty").value=l>0?(l/LPC[sym]).toFixed(dec(sym)):"";est();
 });
-$("bench").onclick=async()=>{
-  $("bench").disabled=true;$("benchOut").innerHTML='<span class="mute">running…</span>';
-  const r=await fetch("/api/benchmark?n=200000",{method:"POST"});const j=await r.json();$("bench").disabled=false;
-  $("benchOut").innerHTML=r.ok?`<div class="big">${j.orders_per_sec.toLocaleString()}</div><div class="mute">orders/sec · ${j.ns_per_order} ns/order<br>${j.orders.toLocaleString()} orders, ${j.trades.toLocaleString()} trades in ${j.elapsed_ms.toFixed(1)} ms · ${j.cpus} vCPU</div>`:`<span class="mute">${j.error}</span>`;
+$("go").onclick=async()=>{
+  if(!tok){showLogin();return}
+  const lots=Math.round(+$("qty").value*LPC[sym]);
+  if(lots<=0){msg(`enter an amount, minimum ${(1/LPC[sym]).toFixed(dec(sym))} ${coin(sym)}`,false);return}
+  const body={symbol:sym,side,type:$("type").value,qty:lots,price:Math.round(+$("price").value*100)};
+  $("go").disabled=true;
+  try{
+    const r=await api("/api/orders",{method:"POST",body:JSON.stringify(body)});const j=await r.json();
+    if(r.status===401){tok=null;showLogin();return}
+    if(!r.ok){msg(j.error,false);return}
+    const f=lots2c(j.filled,sym),q=lots2c(lots,sym);
+    let avg="";if(j.trades.length){let n=0,v=0;j.trades.forEach(t=>{n+=t.qty;v+=t.qty*t.price});avg=` @ avg ${px(v/n)}`}
+    msg(`#${j.order_id} ${side} ${q} ${coin(sym)}: filled ${f}${avg}`+(j.resting?", rest is on the book":(j.filled<lots?", unfilled part cancelled":"")),true);
+    loadAcct();
+  }finally{$("go").disabled=false}
 };
+function msg(t,ok){$("msg").className=ok?"ok":"err";$("msg").textContent=t}
+
+/* ---------- account ---------- */
+function showLogin(){$("login").style.display="flex";setTimeout(()=>$("uname").focus(),50)}
+async function start(name){
+  const r=await api("/api/session",{method:"POST",body:JSON.stringify({name})});const j=await r.json();
+  tok=j.token;try{localStorage.setItem("me_tok",tok)}catch{};$("login").style.display="none";renderAcct(j.account);
+}
+$("startU").onclick=()=>start($("uname").value);$("startG").onclick=()=>start("");
+$("uname").onkeydown=e=>{if(e.key==="Enter")start($("uname").value)};
+async function loadAcct(){
+  if(!tok){renderAcct(null);return}
+  try{const r=await api("/api/account");if(r.status===401){tok=null;try{localStorage.removeItem("me_tok")}catch{};renderAcct(null);showLogin();return}renderAcct(await r.json())}catch{}
+}
+function renderAcct(a){
+  acct=a;
+  $("user").innerHTML=a?`<span>👤 <b>${esc(a.name)}</b></span><a id="out">switch user</a>`:`<a id="in">sign in</a>`;
+  if(a)$("out").onclick=()=>{tok=null;try{localStorage.removeItem("me_tok")}catch{};renderAcct(null);showLogin()};else $("in").onclick=showLogin;
+  if(!a){["kEq","kPnl","kCash","kHeld"].forEach(k=>$(k).textContent="–");$("pos").innerHTML="";$("open").innerHTML=`<tr><td colspan="5" class="empty">sign in to trade</td></tr>`;$("fills").innerHTML="";est();return}
+  $("kEq").textContent=usd(a.equity);
+  $("kPnl").innerHTML=`<span class="${a.pnl>=0?"ok":"err"}">${a.pnl>=0?"+":"−"}${usd(Math.abs(a.pnl))} (${a.pnl_pct>=0?"+":""}${a.pnl_pct.toFixed(2)}%)</span>`;
+  $("kCash").textContent=usd(a.cash);$("kHeld").textContent=usd(a.cash_held);
+  $("pos").innerHTML=`<tr><td>USD</td><td>${(a.cash+a.cash_held).toFixed(2)}</td><td>${usd(a.cash+a.cash_held)}</td></tr>`+
+    a.positions.map(p=>`<tr><td>${coin(p.symbol)}</td><td>${(p.coins+p.held).toFixed(dec(p.symbol))}</td><td>${usd(p.value)}</td></tr>`).join("");
+  $("open").innerHTML=a.open.length?a.open.map(o=>`<tr><td>${o.symbol}</td><td class="${o.side==="buy"?"bid":"ask"}">${o.side}</td><td>${px(o.price)}</td><td>${lots2c(o.qty-o.remaining,o.symbol)} / ${lots2c(o.qty,o.symbol)}</td><td><button class="x" data-id="${o.id}">cancel</button></td></tr>`).join(""):`<tr><td colspan="5" class="empty">no open orders · limit orders that don't match right away rest here</td></tr>`;
+  $("open").querySelectorAll("[data-id]").forEach(b=>b.onclick=async()=>{const r=await api(`/api/orders/${b.dataset.id}`,{method:"DELETE"});const j=await r.json();msg(r.ok?`cancelled #${j.order_id}`:j.error,r.ok);loadAcct()});
+  $("fills").innerHTML=a.fills.length?a.fills.map(f=>`<tr><td>${new Date(f.at).toLocaleTimeString()}</td><td>${f.symbol}</td><td class="${f.side==="buy"?"bid":"ask"}">${f.side}</td><td>${px(f.price)}</td><td>${lots2c(f.qty,f.symbol)}</td><td>${f.role}</td></tr>`).join(""):`<tr><td colspan="6" class="empty">no fills yet</td></tr>`;
+  est();
+}
+
 setInterval(async()=>{try{const s=await fetch("/api/stats").then(r=>r.json());$("sOrders").textContent=s.orders.toLocaleString();$("sTrades").textContent=s.trades.toLocaleString()}catch{}},2000);
-tabs();connect();
+setInterval(loadAcct,1500);
+tabs();connect();form();loadAcct().then(()=>{if(!tok){if(location.hash==="#guest")start("");else showLogin()}});runBench();
 </script>
 </body>
 </html>
