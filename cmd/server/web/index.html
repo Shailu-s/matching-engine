@@ -21,13 +21,9 @@ header h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.02em}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
 .panel h2{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--mute);margin:0 0 10px;font-weight:600}
 /* benchmark hero */
-.hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,.9fr);gap:18px;align-items:center}
-@media(max-width:1000px){.hero{grid-template-columns:1fr}}
+.hero{display:block}
 .big{font:800 44px/1 ui-monospace,Menlo,monospace;color:var(--acc);letter-spacing:-.02em}
 .big small{font-size:15px;color:var(--mute);font-weight:500;letter-spacing:0}
-.bars{display:flex;gap:6px;align-items:flex-end;height:86px;border-bottom:1px solid var(--line);padding-bottom:2px}
-.bars div{flex:1;background:var(--panel2);border-radius:3px 3px 0 0;height:4px;transition:height .35s ease,background .35s}
-.bars div.on{background:var(--acc)}
 .barlbl{display:flex;justify-content:space-between;color:var(--mute);font-size:11px;margin-top:4px}
 .ref{font-size:13px;color:var(--mute);border-left:1px solid var(--line);padding-left:16px}
 .ref b{color:var(--text)}
@@ -56,6 +52,13 @@ label{color:var(--mute);font-size:12px;display:flex;justify-content:space-betwee
 input,select{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:6px;font-size:14px}
 select{font-family:inherit}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.amt{position:relative}.amt input{padding-right:118px}
+.amt input.bad{border-color:var(--sell);box-shadow:0 0 0 1px var(--sell) inset}
+.units{position:absolute;right:5px;top:5px;bottom:5px;display:flex;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.units button{background:none;border:0;color:var(--mute);padding:0 10px;font-size:12px;font-weight:600;cursor:pointer}
+.units button.on{background:var(--panel2);color:var(--text)}
+.hint{min-height:16px;font-size:12px;margin-top:4px;color:var(--sell)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
 .pct{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .pct button{background:var(--panel2);border:1px solid var(--line);color:var(--mute);border-radius:5px;padding:4px;font-size:12px;cursor:pointer}
 .btn{border:0;padding:11px;border-radius:7px;font:inherit;font-weight:700;cursor:pointer;color:#fff;width:100%}
@@ -94,15 +97,6 @@ footer b{color:var(--text)}
         <div class="mute" id="bSub" style="margin-top:8px">Firing 500,000 random orders into a fresh in-memory book on this server…</div>
         <div style="margin-top:10px"><button class="ghost" id="bRun" disabled>Run again</button></div>
       </div>
-      <div>
-        <div class="bars" id="bars"></div>
-        <div class="barlbl"><span>10 batches × 50,000 orders, each timed on its own</span><span id="bRow"></span></div>
-      </div>
-      <div class="ref">
-        <div style="margin-bottom:6px">Same code on a laptop (Apple M4, <span class="mono">go test -bench</span>):</div>
-        <div><b>~7.4M orders/sec</b> matching core, one thread (136 ns/order)</div>
-        <div><b>~1.0M orders/sec</b> full engine path: concurrent clients → channel → book goroutine → reply</div>
-      </div>
     </div>
   </section>
 
@@ -122,9 +116,10 @@ footer b{color:var(--text)}
         <h2>Place order</h2>
         <div class="sidebtns"><button class="buy on" data-side="buy">Buy</button><button class="sell" data-side="sell">Sell</button></div>
         <form id="f" onsubmit="return false">
-          <div class="row">
-            <div><label>Type</label><select id="type"><option value="market">Market</option><option value="limit">Limit</option></select></div>
-            <div><label><span>Amount</span><span id="unit"></span></label><input id="qty" type="number" min="0" step="any"></div>
+          <div><label>Type</label><select id="type"><option value="market">Market</option><option value="limit">Limit</option></select></div>
+          <div><label><span>Amount</span><span class="mute" id="conv"></span></label>
+            <div class="amt"><input id="qty" type="number" min="0" step="any" inputmode="decimal"><div class="units"><button type="button" data-u="coin" class="on" id="uCoin">BTC</button><button type="button" data-u="usd">USD</button></div></div>
+            <div class="hint" id="hint"></div>
           </div>
           <div id="pxRow" style="display:none"><label><span>Limit price (USD)</span><span class="mute">click a book row</span></label><input id="price" type="number" step="0.01"></div>
           <div class="pct"><button type="button" data-p="25">25%</button><button type="button" data-p="50">50%</button><button type="button" data-p="75">75%</button><button type="button" data-p="100">Max</button></div>
@@ -186,27 +181,22 @@ const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",
 const api=(path,opt={})=>fetch(path,{...opt,headers:{"Content-Type":"application/json",...(tok?{"X-Session":tok}:{}),...(opt.headers||{})}});
 
 /* ---------- live benchmark ---------- */
-const bars=$("bars");bars.innerHTML=Array.from({length:10},()=>"<div></div>").join("");
 function countUp(el,to){const t0=performance.now(),d=900;const f=t=>{const k=Math.min(1,(t-t0)/d),v=Math.round(to*(1-Math.pow(1-k,3)));el.innerHTML=v.toLocaleString()+"<small> orders/sec</small>";if(k<1)requestAnimationFrame(f)};requestAnimationFrame(f)}
 function showSummary(s,cached){
   countUp($("bNum"),s.median_orders_per_sec);
-  $("bSub").innerHTML=`median of ${s.chunks} batches · ${s.median_ns_per_order} ns/order · best ${s.best_orders_per_sec.toLocaleString()}/s<br>${s.orders.toLocaleString()} orders, ${s.trades.toLocaleString()} trades · free-tier instance, shared CPU · ${s.go_version}`+(cached?`<br><span style="color:var(--acc)">another visitor was benchmarking, so this is their run from ${Math.round(s.age_sec)}s ago</span>`:"");
+  $("bSub").innerHTML=`median of ${s.chunks} batches · ${s.median_ns_per_order} ns/order · best ${s.best_orders_per_sec.toLocaleString()}/s`+(cached?`<br><span style="color:var(--acc)">another visitor was benchmarking, so this is their run from ${Math.round(s.age_sec)}s ago</span>`:"");
 }
 async function runBench(){
-  $("bRun").disabled=true;$("bNum").innerHTML="…<small> orders/sec</small>";$("bRow").textContent="";
-  [...bars.children].forEach(b=>{b.style.height="4px";b.classList.remove("on")});
+  $("bRun").disabled=true;$("bNum").innerHTML="…<small> orders/sec</small>";
   $("bSub").textContent="Firing 500,000 random orders into a fresh in-memory book on this server…";
   try{
     const r=await fetch("/api/benchmark");
     if((r.headers.get("content-type")||"").includes("application/json")){const j=await r.json();if(j.done)showSummary(j,true);else $("bSub").textContent=j.error;return}
-    const rd=r.body.getReader(),dc=new TextDecoder();let buf="",seen=[];
+    const rd=r.body.getReader(),dc=new TextDecoder();let buf="";
     for(;;){const {value,done}=await rd.read();if(done)break;buf+=dc.decode(value,{stream:true});let i;
       while((i=buf.indexOf("\n"))>=0){const line=buf.slice(0,i);buf=buf.slice(i+1);if(!line)continue;const m=JSON.parse(line);
         if(m.done){showSummary(m,false);continue}
-        seen.push(m.orders_per_sec);const mx=Math.max(...seen)*1.1;
-        [...bars.children].forEach((b,k)=>{if(k<seen.length){b.style.height=Math.max(4,seen[k]/mx*84)+"px";b.classList.add("on")}});
         $("bNum").innerHTML=m.orders_per_sec.toLocaleString()+"<small> orders/sec</small>";
-        $("bRow").textContent=`batch ${m.chunk}/10 · ${(m.ns/1e6).toFixed(1)} ms`;
       }}
   }catch(e){$("bSub").textContent="benchmark failed: "+e.message}
   finally{$("bRun").disabled=false}
@@ -242,7 +232,25 @@ async function connect(){
 
 /* ---------- order entry ---------- */
 document.querySelectorAll(".sidebtns button").forEach(b=>b.onclick=()=>{side=b.dataset.side;document.querySelectorAll(".sidebtns button").forEach(x=>x.classList.toggle("on",x===b));form()});
+let unit="coin";
 $("type").onchange=form;$("qty").oninput=est;$("price").oninput=est;
+document.querySelectorAll(".units button").forEach(b=>b.onclick=()=>{
+  if(b.dataset.u===unit)return;const l=lots(),p=refPx();unit=b.dataset.u;
+  document.querySelectorAll(".units button").forEach(x=>x.classList.toggle("on",x===b));
+  setLots(l>0&&p>0?l:0);
+});
+// what the input means in lots, whichever unit it's typed in
+function lots(){
+  const v=+$("qty").value;if(!(v>0))return 0;
+  if(unit==="coin")return Math.floor(v*LPC[sym]+1e-9);
+  const p=refPx();return p>0?Math.floor(v/(p/100)*LPC[sym]+1e-9):0;
+}
+function setLots(l){
+  if(!(l>0)){$("qty").value="";est();return}
+  $("qty").value=unit==="coin"?(l/LPC[sym]).toFixed(dec(sym)):(l/LPC[sym]*refPx()/100).toFixed(2);est();
+}
+// funds the order needs: market buys are held 5% through the touch
+function need(l){const p=refPx();return side==="buy"?l/LPC[sym]*p/100*($("type").value==="market"?1.05:1):l/LPC[sym]}
 function refPx(){ // cents per coin used for estimates
   if($("type").value==="limit"&&+$("price").value>0)return Math.round(+$("price").value*100);
   const l=side==="buy"?book.asks[0]:book.bids[0];return l?l.price:0;
@@ -251,31 +259,40 @@ function avail(){if(!acct)return 0;if(side==="buy")return acct.cash;const p=acct
 function form(){
   $("pxRow").style.display=$("type").value==="limit"?"":"none";
   if($("type").value==="limit"&&!$("price").value){const l=side==="buy"?book.bids[0]:book.asks[0];if(l)$("price").value=(l.price/100).toFixed(2)}
-  $("unit").textContent=coin(sym);$("qty").step=(1/LPC[sym]).toFixed(dec(sym));$("qty").placeholder="0."+"0".repeat(dec(sym)-1)+"1";
+  $("uCoin").textContent=coin(sym);
+  $("qty").step=unit==="coin"?(1/LPC[sym]).toFixed(dec(sym)):"0.01";
+  $("qty").placeholder=unit==="coin"?"0."+"0".repeat(dec(sym)-1)+"1":"100.00";
   $("go").className="btn "+side;$("go").textContent=`${side==="buy"?"Buy":"Sell"} ${coin(sym)}`;est();
 }
 function est(){
-  const a=avail();$("avail").textContent=acct?(side==="buy"?usd(a):`${a.toFixed(dec(sym))} ${coin(sym)}`):"–";
-  const q=+$("qty").value,p=refPx();$("est").textContent=q>0&&p>0?usd(q*p/100):"–";
+  const a=avail(),c=coin(sym),l=lots(),p=refPx(),raw=+$("qty").value>0;
+  $("avail").textContent=acct?(side==="buy"?usd(a):`${a.toFixed(dec(sym))} ${c}`):"–";
+  const amt=l/LPC[sym];
+  $("est").textContent=l>0&&p>0?`${amt.toFixed(dec(sym))} ${c} ≈ ${usd(amt*p/100)}`:"–";
+  $("conv").textContent=l>0&&p>0?(unit==="coin"?`≈ ${usd(amt*p/100)}`:`≈ ${amt.toFixed(dec(sym))} ${c}`):"";
+  let bad="";
+  if(raw&&l<=0)bad=`Minimum is ${(1/LPC[sym]).toFixed(dec(sym))} ${c}${p>0?` (≈ ${usd(p/100/LPC[sym])})`:""}`;
+  else if(raw&&acct&&need(l)>a+1e-9)bad=side==="buy"?`Exceeds your ${usd(a)} available`+($("type").value==="market"?" (market buys hold a 5% buffer)":""):`You only have ${a.toFixed(dec(sym))} ${c}`;
+  $("qty").classList.toggle("bad",!!bad);$("hint").textContent=bad;
+  $("go").disabled=!!bad||(acct&&!(l>0));
 }
 document.querySelectorAll(".pct button").forEach(b=>b.onclick=()=>{
-  const f=+b.dataset.p/100,p=refPx();let q;
-  if(side==="buy"){if(!p)return;q=avail()*f/(p/100)*($("type").value==="market"?0.95:1)}else q=avail()*f;
-  const l=Math.floor(q*LPC[sym]+1e-9);$("qty").value=l>0?(l/LPC[sym]).toFixed(dec(sym)):"";est();
+  const f=+b.dataset.p/100,p=refPx();if(!p)return;
+  const q=side==="buy"?avail()*f/(p/100)/($("type").value==="market"?1.05:1):avail()*f;
+  setLots(Math.floor(q*LPC[sym]+1e-9));
 });
 $("go").onclick=async()=>{
   if(!tok){showLogin();return}
-  const lots=Math.round(+$("qty").value*LPC[sym]);
-  if(lots<=0){msg(`enter an amount, minimum ${(1/LPC[sym]).toFixed(dec(sym))} ${coin(sym)}`,false);return}
-  const body={symbol:sym,side,type:$("type").value,qty:lots,price:Math.round(+$("price").value*100)};
+  const n=lots();if(n<=0)return;
+  const body={symbol:sym,side,type:$("type").value,qty:n,price:Math.round(+$("price").value*100)};
   $("go").disabled=true;
   try{
     const r=await api("/api/orders",{method:"POST",body:JSON.stringify(body)});const j=await r.json();
     if(r.status===401){tok=null;showLogin();return}
     if(!r.ok){msg(j.error,false);return}
-    const f=lots2c(j.filled,sym),q=lots2c(lots,sym);
+    const f=lots2c(j.filled,sym),q=lots2c(n,sym);
     let avg="";if(j.trades.length){let n=0,v=0;j.trades.forEach(t=>{n+=t.qty;v+=t.qty*t.price});avg=` @ avg ${px(v/n)}`}
-    msg(`#${j.order_id} ${side} ${q} ${coin(sym)}: filled ${f}${avg}`+(j.resting?", rest is on the book":(j.filled<lots?", unfilled part cancelled":"")),true);
+    msg(`#${j.order_id} ${side} ${q} ${coin(sym)}: filled ${f}${avg}`+(j.resting?", rest is on the book":(j.filled<n?", unfilled part cancelled":"")),true);
     loadAcct();
   }finally{$("go").disabled=false}
 };
