@@ -190,7 +190,7 @@ const bars=$("bars");bars.innerHTML=Array.from({length:10},()=>"<div></div>").jo
 function countUp(el,to){const t0=performance.now(),d=900;const f=t=>{const k=Math.min(1,(t-t0)/d),v=Math.round(to*(1-Math.pow(1-k,3)));el.innerHTML=v.toLocaleString()+"<small> orders/sec</small>";if(k<1)requestAnimationFrame(f)};requestAnimationFrame(f)}
 function showSummary(s,cached){
   countUp($("bNum"),s.median_orders_per_sec);
-  $("bSub").innerHTML=`median of ${s.chunks} batches · ${s.median_ns_per_order} ns/order · best ${s.best_orders_per_sec.toLocaleString()}/s<br>${s.orders.toLocaleString()} orders, ${s.trades.toLocaleString()} trades · ${s.cpus} vCPU shared · ${s.go_version}`+(cached?`<br><span style="color:var(--acc)">another visitor was benchmarking, so this is their run from ${Math.round(s.age_sec)}s ago</span>`:"");
+  $("bSub").innerHTML=`median of ${s.chunks} batches · ${s.median_ns_per_order} ns/order · best ${s.best_orders_per_sec.toLocaleString()}/s<br>${s.orders.toLocaleString()} orders, ${s.trades.toLocaleString()} trades · free-tier instance, shared CPU · ${s.go_version}`+(cached?`<br><span style="color:var(--acc)">another visitor was benchmarking, so this is their run from ${Math.round(s.age_sec)}s ago</span>`:"");
 }
 async function runBench(){
   $("bRun").disabled=true;$("bNum").innerHTML="…<small> orders/sec</small>";$("bRow").textContent="";
