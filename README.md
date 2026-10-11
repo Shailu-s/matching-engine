@@ -9,7 +9,83 @@ that start with $10,000 and trade against a liquidity bot.
 first load after idle takes ~50 s). Opening the page runs a live benchmark on
 the server.
 
-## Benchmarks (Apple M4, 10 cores, Go 1.25.7)
+## Durable exchange pipeline
+
+The matching numbers below measure one loop with orders already in memory.
+A real venue also has to take the order off the network, check risk, and
+make it durable before saying "accepted". This repo builds that hot path
+and measures it one layer at a time.
+
+```
+ loadgen (separate process)
+    |  binary TCP protocol, pipelined, 16 connections
+    v
+ GATEWAY        per-connection reader/writer, backpressure at 4,096 in flight
+    v
+ SEQUENCER      single writer: stamps seq, batches whatever is waiting
+    v
+ JOURNAL        one write + one fsync per batch (group commit), CRC per record
+    v           ...only now is the order durable
+ CORE           one goroutine, no locks, no clock, no randomness
+   risk #1      reserve cash/coins for the order
+   matching     price-time priority (engine.Book)
+   risk #2      settle both sides of every fill, refund unused holds
+    v
+ REPLY          ack carries seq (= order ID), filled, resting
+```
+
+- **Ack means durable.** A command is answered only after its batch is
+  fsynced *and* applied. The sequencer and core are separate goroutines, so
+  batch N+1 is being flushed while batch N is applied.
+- **Deterministic core.** State is a pure function of the journal, so
+  recovery is: load the newest snapshot, replay the journal after it,
+  truncate a torn last record. `exchange -verify` rebuilds the state both
+  that way and from the whole journal and compares SHA-256 state hashes.
+- **Snapshots** are written atomically (temp file, fsync, rename, fsync dir)
+  between batches, every N commands and on shutdown.
+- **Not in the hot path (on purpose):** Kafka, Postgres, market-data
+  fan-out. They are consumers of the output stream; they add lag for
+  downstream readers, not latency to an order.
+
+### Benchmark ladder
+
+`go run ./cmd/ladder -md docs/ladder.md` measures each layer with the same
+order flow (limits around mid, 10% IOC, 10% cancels, 3 markets, 800 accounts):
+
+| # | Adds | What it proves |
+|---|---|---|
+| 1 | matching only, one thread | the algorithm's cost |
+| 2 | + risk reserve/settle | what pre/post-trade checks cost |
+| 3 | + sequencer + journal write, no fsync | batching and file I/O |
+| 4 | + fsync per batch (group commit) | the price of durability |
+| 5 | + TCP gateway, separate process | end-to-end max throughput |
+| 6 | same as 5 at fixed rates | latency when not saturated |
+
+Rungs 3-5 are closed loop (every connection keeps 256 orders in flight), so
+their latency is mostly queueing: 4,096 in flight / throughput. Rung 6 sends
+on a clock and measures from the scheduled send time, so a stalled server
+can't hide by slowing the client (coordinated omission). The table also
+shows latency measured inside the server and the fsync time itself: on
+macOS `fsync` is a full flush (`F_FULLFSYNC`), typically ~3-4 ms with
+occasional 30-130 ms stalls, and those stalls are where the p99 tail comes
+from.
+
+Results: **pending the clean benchmark run** (docs/ladder.md and a
+screenshot will go here).
+
+### Crash test
+
+`./scripts/crash-demo.sh` sends live load, `kill -9`s the exchange mid
+stream, verifies the crashed data offline, and restarts it.
+`go test ./exchange/ -run Kill9` does the same four times against the real
+binary, sometimes appending a torn record, and asserts that no acknowledged
+order is lost and that snapshot + replay equals full replay.
+
+Note: `kill -9` proves process-crash recovery. The OS page cache survives a
+process crash, so fsync is what covers power loss, which a test on a laptop
+cannot simulate.
+
+## Matching micro-benchmarks (Apple M4, 10 cores, Go 1.25.7)
 
 ![go test -bench output](docs/benchmark.png)
 
@@ -71,7 +147,10 @@ sizes are 0.001 BTC, 0.01 ETH and 0.1 SOL so small accounts can trade.
 
 ## Tests
 
-`go test -race ./...` covers price priority, time priority, maker-price
+`go test -race ./...` covers the pipeline (deterministic core, snapshot +
+replay equals full replay, value conservation, risk rejects and refunds,
+journal round trip and torn-tail truncation, wire protocol, TCP round trip,
+graceful restart, and the kill -9 test above), plus price priority, time priority, maker-price
 execution, market and IOC orders, cancel, rejects, a 50,000-order randomised
 run that checks lot conservation and that the book is never left crossed,
 that the trade hook sees every fill before the reply, and account tests:
@@ -95,6 +174,13 @@ unchanged.
 ## Run
 
 ```
-go run ./cmd/server      # http://localhost:8080
+go run ./cmd/exchange -dir data          # durable pipeline: TCP :9100, admin :9101
+go run ./cmd/loadgen                     # closed loop against it
+go run ./cmd/loadgen -rate 50000         # fixed rate
+curl localhost:9101/state                # seq, state hash, batch sizes, latencies
+go run ./cmd/exchange -dir data -verify  # snapshot+replay vs full replay
+go run ./cmd/ladder                      # the benchmark ladder
+
+go run ./cmd/server      # web demo: http://localhost:8080
 docker build -t me . && docker run -p 8080:8080 me
 ```
