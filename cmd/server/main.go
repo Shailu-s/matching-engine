@@ -11,9 +11,11 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Shailu-s/matching-engine/engine"
@@ -28,20 +30,25 @@ var symbols = []string{"BTC-USD", "ETH-USD", "SOL-USD"}
 var mids = map[string]int64{"BTC-USD": 6500000, "ETH-USD": 320000, "SOL-USD": 15000}
 
 func main() {
-	e := engine.New(symbols...)
+	accts := NewAccounts(symbols)
+	e := engine.NewWithHook(accts.Settle, symbols...)
 	for _, s := range symbols {
 		go liquidityBot(e, s)
 	}
+	srv := &server{e: e, a: accts}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/orders", func(w http.ResponseWriter, r *http.Request) { submit(e, w, r) })
-	mux.HandleFunc("DELETE /api/orders/{sym}/{id}", func(w http.ResponseWriter, r *http.Request) { cancel(e, w, r) })
+	mux.HandleFunc("POST /api/session", srv.session)
+	mux.HandleFunc("GET /api/account", srv.account)
+	mux.HandleFunc("GET /api/markets", srv.markets)
+	mux.HandleFunc("POST /api/orders", srv.submit)
+	mux.HandleFunc("DELETE /api/orders/{id}", srv.cancel)
 	mux.HandleFunc("GET /api/depth/{sym}", func(w http.ResponseWriter, r *http.Request) { depth(e, w, r) })
 	mux.HandleFunc("GET /api/stream/{sym}", func(w http.ResponseWriter, r *http.Request) { stream(e, w, r) })
 	mux.HandleFunc("GET /api/stats", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"orders": e.Matched.Load(), "trades": e.Trades.Load(), "symbols": symbols, "cpus": runtime.NumCPU()})
+		writeJSON(w, 200, map[string]any{"orders": e.Matched.Load(), "trades": e.Trades.Load(), "symbols": symbols, "cpus": runtime.NumCPU(), "accounts": accts.Count()})
 	})
-	mux.HandleFunc("POST /api/benchmark", benchmark)
+	mux.HandleFunc("GET /api/benchmark", benchmark)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	sub, _ := fs.Sub(webFS, "web")
 	mux.Handle("/", http.FileServer(http.FS(sub)))
@@ -54,58 +61,157 @@ func main() {
 	log.Fatal(http.ListenAndServe(":"+port, mux))
 }
 
+type server struct {
+	e *engine.Engine
+	a *Accounts
+}
+
+func token(r *http.Request) string { return r.Header.Get("X-Session") }
+
+func (s *server) session(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req)
+	acc, stale := s.a.Create(req.Name)
+	for _, o := range stale {
+		s.e.Cancel(r.Context(), o.Symbol, o.ID)
+	}
+	v, _ := s.a.View(acc.token)
+	writeJSON(w, 201, map[string]any{"token": acc.token, "account": v})
+}
+
+func (s *server) account(w http.ResponseWriter, r *http.Request) {
+	v, err := s.a.View(token(r))
+	if err != nil {
+		writeErr(w, 401, err.Error())
+		return
+	}
+	writeJSON(w, 200, v)
+}
+
+func (s *server) markets(w http.ResponseWriter, r *http.Request) {
+	out := []map[string]any{}
+	for _, sym := range symbols {
+		out = append(out, map[string]any{"symbol": sym, "lots_per_coin": lotsPerCoin[sym]})
+	}
+	writeJSON(w, 200, out)
+}
+
 type orderReq struct {
 	Symbol string `json:"symbol"`
 	Side   string `json:"side"`
 	Type   string `json:"type"`
-	Price  int64  `json:"price"`
-	Qty    int64  `json:"qty"`
+	Price  int64  `json:"price"` // cents per coin, limit orders only
+	Qty    int64  `json:"qty"`   // lots
 }
 
-func submit(e *engine.Engine, w http.ResponseWriter, r *http.Request) {
+// submit: reserve funds (risk #1) -> engine -> fills settle in the trade hook
+// (risk #2) -> release whatever an IOC/market order did not use.
+func (s *server) submit(w http.ResponseWriter, r *http.Request) {
 	var req orderReq
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeErr(w, 400, "bad json")
 		return
 	}
-	o := &engine.Order{ID: e.NextID(), Price: req.Price, Qty: req.Qty}
-	switch strings.ToLower(req.Side) {
-	case "buy":
-		o.Side = engine.Buy
-	case "sell":
-		o.Side = engine.Sell
-	default:
+	if !s.a.Has(token(r)) {
+		writeErr(w, 401, errNoSession.Error())
+		return
+	}
+	if _, ok := lotsPerCoin[req.Symbol]; !ok {
+		writeErr(w, 404, engine.ErrUnknownSymbol.Error())
+		return
+	}
+	side := strings.ToLower(req.Side)
+	if side != "buy" && side != "sell" {
 		writeErr(w, 400, "side must be buy or sell")
 		return
 	}
-	if strings.ToLower(req.Type) == "market" {
-		o.Kind = engine.Market
+	if req.Qty <= 0 || req.Qty > 1_000_000 {
+		writeErr(w, 400, engine.ErrBadQty.Error())
+		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	trades, err := e.Submit(ctx, req.Symbol, o)
+	kind := "limit"
+	price := req.Price
+	if strings.ToLower(req.Type) == "market" {
+		// a market order becomes an immediate-or-cancel limit 5% through the
+		// touch, so the funds to hold are bounded and a thin book can't fill
+		// it at an absurd price
+		kind = "market"
+		d, err := s.e.Depth(ctx, req.Symbol, 1)
+		if err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+		if side == "buy" && len(d.Asks) > 0 {
+			price = d.Asks[0].Price * 105 / 100
+		} else if side == "sell" && len(d.Bids) > 0 {
+			price = d.Bids[0].Price * 95 / 100
+		} else {
+			writeErr(w, 422, errNoLiquidity.Error())
+			return
+		}
+	}
+	if price <= 0 || price > 1_000_000_000 {
+		writeErr(w, 400, engine.ErrBadPrice.Error())
+		return
+	}
+	id := s.e.NextID()
+	oo := &openOrder{ID: id, Symbol: req.Symbol, Side: side, Kind: kind, Price: price, Qty: req.Qty, Remaining: req.Qty, At: time.Now().UnixMilli(), ioc: kind == "market"}
+	owner, err := s.a.Reserve(token(r), oo)
 	if err != nil {
+		code := 422
+		if errors.Is(err, errNoSession) {
+			code = 401
+		}
+		writeErr(w, code, err.Error())
+		return
+	}
+	o := &engine.Order{ID: id, Price: price, Qty: req.Qty, Owner: owner, IOC: oo.ioc, Side: engine.Buy}
+	if side == "sell" {
+		o.Side = engine.Sell
+	}
+	trades, err := s.e.Submit(ctx, req.Symbol, o)
+	if err != nil {
+		// the order never reached the book; give the hold back
+		s.a.Cancelled(token(r), id)
 		writeErr(w, statusFor(err), err.Error())
 		return
+	}
+	s.a.Done(token(r), id)
+	if trades == nil {
+		trades = []engine.Trade{}
 	}
 	var filled int64
 	for _, t := range trades {
 		filled += t.Qty
 	}
-	writeJSON(w, 201, map[string]any{"order_id": o.ID, "filled": filled, "resting": o.Kind == engine.Limit && filled < req.Qty, "trades": trades})
+	writeJSON(w, 201, map[string]any{"order_id": id, "filled": filled, "resting": kind == "limit" && filled < req.Qty, "trades": trades})
 }
 
-func cancel(e *engine.Engine, w http.ResponseWriter, r *http.Request) {
+func (s *server) cancel(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeErr(w, 400, "bad id")
 		return
 	}
-	o, err := e.Cancel(r.Context(), r.PathValue("sym"), id)
+	sym, err := s.a.Owns(token(r), id)
+	if err != nil {
+		code := 404
+		if errors.Is(err, errNoSession) {
+			code = 401
+		}
+		writeErr(w, code, err.Error())
+		return
+	}
+	o, err := s.e.Cancel(r.Context(), sym, id)
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
+	s.a.Cancelled(token(r), id)
 	writeJSON(w, 200, map[string]any{"order_id": o.ID, "cancelled_qty": o.Qty})
 }
 
@@ -169,23 +275,62 @@ func stream(e *engine.Engine, w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-var benchMu sync.Mutex
+var (
+	benchMu   sync.Mutex
+	lastBench atomic.Pointer[benchSummary]
+)
 
-// benchmark runs a fresh, isolated book through N synthetic orders on this
-// server and reports measured throughput. One at a time so concurrent clicks
-// don't skew each other's numbers.
+type benchChunk struct {
+	Chunk  int   `json:"chunk"`
+	Orders int   `json:"orders"`
+	Trades int   `json:"trades"`
+	Ns     int64 `json:"ns"`
+	OPS    int64 `json:"orders_per_sec"`
+}
+
+type benchSummary struct {
+	Done      bool    `json:"done"`
+	Chunks    int     `json:"chunks"`
+	Orders    int     `json:"orders"`
+	Trades    int     `json:"trades"`
+	MedianOPS int64   `json:"median_orders_per_sec"`
+	BestOPS   int64   `json:"best_orders_per_sec"`
+	NsPerOrd  int64   `json:"median_ns_per_order"`
+	Resting   int     `json:"resting_after"`
+	CPUs      int     `json:"cpus"`
+	GoVersion string  `json:"go_version"`
+	At        int64   `json:"at"`
+	Cached    bool    `json:"cached,omitempty"`
+	AgeSec    float64 `json:"age_sec,omitempty"`
+}
+
+// benchmark streams a live run as NDJSON: one line per timed chunk of orders
+// through a single fresh, isolated book, then a summary. Each chunk is timed
+// on its own and the short pause between chunks is outside the timing, so a
+// throttled shared CPU shows up as slow bars instead of silently skewing one
+// big number. The median chunk is the headline figure.
 func benchmark(w http.ResponseWriter, r *http.Request) {
-	n, _ := strconv.Atoi(r.URL.Query().Get("n"))
-	if n <= 0 || n > 500000 {
-		n = 200000
-	}
+	const chunks, size = 10, 50_000
 	if !benchMu.TryLock() {
+		if last := lastBench.Load(); last != nil {
+			c := *last
+			c.Cached = true
+			c.AgeSec = time.Since(time.UnixMilli(c.At)).Seconds()
+			writeJSON(w, 200, c)
+			return
+		}
 		writeErr(w, 429, "a benchmark is already running, try again in a second")
 		return
 	}
 	defer benchMu.Unlock()
+	fl, _ := w.(http.Flusher)
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	enc := json.NewEncoder(w)
+
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	flow := make([]engine.Order, n)
+	flow := make([]engine.Order, chunks*size)
 	for i := range flow {
 		flow[i] = engine.Order{ID: uint64(i + 1), Side: engine.Side(rng.Intn(2)), Price: 10000 + int64(rng.Intn(100)) - 50, Qty: 1 + int64(rng.Intn(50))}
 		if rng.Intn(20) == 0 {
@@ -193,18 +338,38 @@ func benchmark(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	b := engine.NewBook("BENCH")
-	var trades int
-	start := time.Now()
-	for i := range flow {
-		tr, _ := b.Submit(&flow[i])
-		trades += len(tr)
+	ops := make([]int64, 0, chunks)
+	sum := benchSummary{Done: true, Chunks: chunks, CPUs: runtime.NumCPU(), GoVersion: runtime.Version()}
+	for c := 0; c < chunks; c++ {
+		if r.Context().Err() != nil {
+			return
+		}
+		part := flow[c*size : (c+1)*size]
+		trades := 0
+		start := time.Now()
+		for i := range part {
+			tr, _ := b.Submit(&part[i])
+			trades += len(tr)
+		}
+		el := time.Since(start)
+		ch := benchChunk{Chunk: c + 1, Orders: size, Trades: trades, Ns: el.Nanoseconds(), OPS: int64(float64(size) / el.Seconds())}
+		ops = append(ops, ch.OPS)
+		sum.Orders += size
+		sum.Trades += trades
+		enc.Encode(ch)
+		if fl != nil {
+			fl.Flush()
+		}
+		time.Sleep(150 * time.Millisecond)
 	}
-	el := time.Since(start)
-	writeJSON(w, 200, map[string]any{
-		"orders": n, "trades": trades, "elapsed_ms": float64(el.Microseconds()) / 1000,
-		"orders_per_sec": int64(float64(n) / el.Seconds()), "ns_per_order": el.Nanoseconds() / int64(n),
-		"resting_after": b.RestingOrders(), "cpus": runtime.NumCPU(),
-	})
+	sort.Slice(ops, func(i, j int) bool { return ops[i] < ops[j] })
+	sum.MedianOPS = (ops[chunks/2-1] + ops[chunks/2]) / 2
+	sum.BestOPS = ops[chunks-1]
+	sum.NsPerOrd = int64(1e9 / float64(sum.MedianOPS))
+	sum.Resting = b.RestingOrders()
+	sum.At = time.Now().UnixMilli()
+	lastBench.Store(&sum)
+	enc.Encode(sum)
 }
 
 // liquidityBot keeps each demo book populated with a two-sided market and a
@@ -215,7 +380,8 @@ func liquidityBot(e *engine.Engine, sym string) {
 	tickSz := max(mid/10000, 1)
 	ctx := context.Background()
 	var live []uint64
-	for {
+	for i := 0; ; i++ {
+		seeding := i < 120 // fill both sides fast after a restart, passive only
 		mid += int64(rng.Intn(5)-2) * tickSz
 		s := engine.Side(rng.Intn(2))
 		off := int64(1+rng.Intn(12)) * tickSz
@@ -223,13 +389,13 @@ func liquidityBot(e *engine.Engine, sym string) {
 		if s == engine.Sell {
 			px = mid + off
 		}
-		if rng.Intn(6) == 0 { // aggressive order that trades
+		if !seeding && rng.Intn(6) == 0 { // aggressive order that trades
 			px = mid + 15*tickSz
 			if s == engine.Sell {
 				px = mid - 15*tickSz
 			}
 		}
-		o := &engine.Order{ID: e.NextID(), Side: s, Price: px, Qty: 1 + int64(rng.Intn(25))}
+		o := &engine.Order{ID: e.NextID(), Side: s, Price: px, Qty: 1 + int64(rng.Intn(40))}
 		qty := o.Qty
 		// don't read o after Submit: once resting, the engine goroutine owns it
 		if tr, err := e.Submit(ctx, sym, o); err == nil {
@@ -245,7 +411,9 @@ func liquidityBot(e *engine.Engine, sym string) {
 			e.Cancel(ctx, sym, live[0])
 			live = live[1:]
 		}
-		time.Sleep(time.Duration(150+rng.Intn(250)) * time.Millisecond)
+		if !seeding {
+			time.Sleep(time.Duration(150+rng.Intn(250)) * time.Millisecond)
+		}
 	}
 }
 
