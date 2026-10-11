@@ -270,4 +270,18 @@ func (b *Book) Depth(n int) Depth {
 
 func (b *Book) RestingOrders() int { return len(b.orders) }
 
+// EachResting visits resting orders in priority order: bids best-first,
+// then asks best-first, FIFO within a level. Re-submitting them in this
+// order into an empty book rebuilds the same book, which is how snapshots
+// are restored. The callback must not modify the book.
+func (b *Book) EachResting(fn func(o *Order)) {
+	for _, s := range []*side{b.bids, b.asks} {
+		for _, l := range s.levels {
+			for o := l.head; o != nil; o = o.next {
+				fn(o)
+			}
+		}
+	}
+}
+
 var ErrUnknownSymbol = errors.New("unknown symbol")
