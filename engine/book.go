@@ -33,25 +33,29 @@ const (
 )
 
 type Order struct {
-	ID       uint64
-	Side     Side
-	Kind     Kind
-	Price    int64 // ignored for market orders
-	Qty      int64 // remaining quantity
-	OrigQty  int64
-	Seq      uint64 // arrival sequence, the "time" in price-time priority
-	level    *level
-	prev     *Order
-	next     *Order
-	resting  bool
+	ID      uint64
+	Side    Side
+	Kind    Kind
+	Price   int64 // ignored for market orders
+	Qty     int64 // remaining quantity
+	OrigQty int64
+	Seq     uint64 // arrival sequence, the "time" in price-time priority
+	IOC     bool   // immediate-or-cancel: a limit order that never rests
+	Owner   uint64 // account that placed it; 0 for anonymous flow
+	level   *level
+	prev    *Order
+	next    *Order
+	resting bool
 }
 
 type Trade struct {
-	MakerID uint64 `json:"maker_id"`
-	TakerID uint64 `json:"taker_id"`
-	Price   int64  `json:"price"`
-	Qty     int64  `json:"qty"`
-	TakerSide string `json:"taker_side"`
+	MakerID    uint64 `json:"maker_id"`
+	TakerID    uint64 `json:"taker_id"`
+	Price      int64  `json:"price"`
+	Qty        int64  `json:"qty"`
+	TakerSide  string `json:"taker_side"`
+	MakerOwner uint64 `json:"-"`
+	TakerOwner uint64 `json:"-"`
 }
 
 // level is a FIFO queue of resting orders at one price, as an intrusive
@@ -161,7 +165,7 @@ var (
 )
 
 // Submit matches an incoming order against the opposite side and rests any
-// limit remainder. Market order remainders are discarded (IOC semantics).
+// limit remainder. Market and IOC remainders are discarded.
 // The returned trade slice is only valid until the next Submit.
 func (b *Book) Submit(o *Order) ([]Trade, error) {
 	if o.Qty <= 0 {
@@ -190,7 +194,7 @@ func (b *Book) Submit(o *Order) ([]Trade, error) {
 		for o.Qty > 0 && best.head != nil {
 			m := best.head
 			q := min(o.Qty, m.Qty)
-			b.trades = append(b.trades, Trade{MakerID: m.ID, TakerID: o.ID, Price: best.price, Qty: q, TakerSide: o.Side.String()})
+			b.trades = append(b.trades, Trade{MakerID: m.ID, TakerID: o.ID, Price: best.price, Qty: q, TakerSide: o.Side.String(), MakerOwner: m.Owner, TakerOwner: o.Owner})
 			o.Qty -= q
 			m.Qty -= q
 			best.total -= q
@@ -205,7 +209,7 @@ func (b *Book) Submit(o *Order) ([]Trade, error) {
 			opp.drop(best)
 		}
 	}
-	if o.Qty > 0 && o.Kind == Limit {
+	if o.Qty > 0 && o.Kind == Limit && !o.IOC {
 		own.getOrCreate(o.Price).push(o)
 		o.resting = true
 		b.orders[o.ID] = o

@@ -16,7 +16,14 @@ type Engine struct {
 	nextID  atomic.Uint64
 	Matched atomic.Uint64 // total orders processed, for the stats endpoint
 	Trades  atomic.Uint64
+	hook    TradeHook
 }
+
+// TradeHook runs on the symbol's owner goroutine after every submit that
+// traded, before the submitter is answered. It sees every fill exactly once
+// and in order, unlike subscribers, so it is where balances get settled.
+// It must be quick: it holds up matching for that symbol.
+type TradeHook func(symbol string, trades []Trade)
 
 type cmdKind uint8
 
@@ -56,8 +63,10 @@ type Event struct {
 	At     int64   `json:"at"`
 }
 
-func New(symbols ...string) *Engine {
-	e := &Engine{books: make(map[string]*runner)}
+func New(symbols ...string) *Engine { return NewWithHook(nil, symbols...) }
+
+func NewWithHook(hook TradeHook, symbols ...string) *Engine {
+	e := &Engine{books: make(map[string]*runner), hook: hook}
 	for _, s := range symbols {
 		r := &runner{book: NewBook(s), in: make(chan cmd, 4096), subs: map[chan Event]struct{}{}}
 		e.books[s] = r
@@ -76,6 +85,9 @@ func (e *Engine) loop(r *runner) {
 				res.trades = append([]Trade(nil), tr...) // book reuses its buffer
 				e.Matched.Add(1)
 				e.Trades.Add(uint64(len(tr)))
+				if e.hook != nil && len(tr) > 0 {
+					e.hook(r.book.Symbol, res.trades)
+				}
 			}
 			res.err = err
 		case cmdCancel:

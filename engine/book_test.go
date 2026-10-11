@@ -9,6 +9,34 @@ func lim(id uint64, s Side, px, qty int64) *Order {
 	return &Order{ID: id, Side: s, Kind: Limit, Price: px, Qty: qty}
 }
 
+func tr3(maker, taker uint64, px, qty int64) Trade {
+	return Trade{MakerID: maker, TakerID: taker, Price: px, Qty: qty, TakerSide: "buy"}
+}
+
+func TestIOCDoesNotRest(t *testing.T) {
+	b := NewBook("X")
+	b.Submit(lim(1, Sell, 100, 5))
+	o := lim(2, Buy, 100, 8)
+	o.IOC = true
+	tr, _ := b.Submit(o)
+	if len(tr) != 1 || tr[0].Qty != 5 || b.RestingOrders() != 0 {
+		t.Fatalf("IOC should fill 5 and drop 3, got trades=%v resting=%d", tr, b.RestingOrders())
+	}
+}
+
+func TestTradesCarryOwners(t *testing.T) {
+	b := NewBook("X")
+	m := lim(1, Sell, 100, 5)
+	m.Owner = 7
+	b.Submit(m)
+	o := lim(2, Buy, 100, 5)
+	o.Owner = 9
+	tr, _ := b.Submit(o)
+	if tr[0].MakerOwner != 7 || tr[0].TakerOwner != 9 {
+		t.Fatalf("owners not carried: %+v", tr[0])
+	}
+}
+
 func TestRestsWhenNoCross(t *testing.T) {
 	b := NewBook("X")
 	tr, _ := b.Submit(lim(1, Buy, 100, 5))
@@ -27,7 +55,7 @@ func TestPriceThenTimePriority(t *testing.T) {
 	b.Submit(lim(2, Sell, 100, 5)) // better price, later
 	b.Submit(lim(3, Sell, 100, 5)) // same price, even later
 	tr, _ := b.Submit(lim(4, Buy, 101, 12))
-	want := []Trade{{2, 4, 100, 5, "buy"}, {3, 4, 100, 5, "buy"}, {1, 4, 101, 2, "buy"}}
+	want := []Trade{tr3(2, 4, 100, 5), tr3(3, 4, 100, 5), tr3(1, 4, 101, 2)}
 	if len(tr) != len(want) {
 		t.Fatalf("got %v", tr)
 	}
