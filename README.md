@@ -1,9 +1,19 @@
 # Matching Engine
 
-In-memory limit order book and matching engine in Go. Price-time priority,
-limit, market and IOC orders, O(1) cancel, one owner goroutine per symbol,
-live order book and trade stream over Server-Sent Events, and demo accounts
-that start with $10,000 and trade against a liquidity bot.
+An exchange hot path in Go: TCP gateway, sequencer, write-ahead journal with
+group-commit fsync, pre-trade risk, a price-time priority order book, and
+crash recovery by snapshot + journal replay. Every layer is benchmarked on
+its own, so each number says exactly what it includes.
+
+| Measured on an Apple M4 laptop | |
+|---|---|
+| Matching core, one thread, orders in memory | 2.0-5.5M orders/sec |
+| End to end: TCP, risk, matching, fsync before every ack | 410-580K orders/sec |
+| Latency at a steady 50K orders/sec | p50 5.5-7 ms, bounded below by one ~4 ms fsync |
+| Recovery after kill -9 | snapshot + journal tail, state hash identical |
+
+The ranges cover every run, including runs with other workloads on the
+machine. Go, standard library only.
 
 **Live demo:** https://matching-engine-ydj6.onrender.com (free tier, the
 first load after idle takes ~50 s). Opening the page runs a live benchmark on
@@ -43,7 +53,7 @@ and measures it one layer at a time.
   that way and from the whole journal and compares SHA-256 state hashes.
 - **Snapshots** are written atomically (temp file, fsync, rename, fsync dir)
   between batches, every N commands and on shutdown.
-- **Not in the hot path (on purpose):** Kafka, Postgres, market-data
+- **Deliberately not in the hot path:** Kafka, Postgres, market-data
   fan-out. They are consumers of the output stream; they add lag for
   downstream readers, not latency to an order.
 
@@ -70,13 +80,23 @@ macOS `fsync` is a full flush (`F_FULLFSYNC`), typically ~3-4 ms with
 occasional 30-130 ms stalls, and those stalls are where the p99 tail comes
 from.
 
-Results: **pending the clean benchmark run** (docs/ladder.md and a
-screenshot will go here).
+![benchmark ladder](docs/ladder.png)
+
+One run, with other workloads active on the laptop; all three runs are in
+[docs/ladder-runs.txt](docs/ladder-runs.txt). Medians are stable across
+runs: end to end 410-460K orders/sec (up to 580K on a quiet machine), p50
+6-8 ms at fixed rates. The p99 is not stable on this laptop: it follows the
+fsync tail, and macOS flushes (`F_FULLFSYNC`) occasionally stall for tens of
+milliseconds. Every order queued behind a stalled flush waits for it, which
+is why production venues replicate the journal to a second machine's memory
+instead of putting a local fsync on the critical path.
 
 ### Crash test
 
 `./scripts/crash-demo.sh` sends live load, `kill -9`s the exchange mid
 stream, verifies the crashed data offline, and restarts it.
+
+![kill -9 crash test](docs/crash-demo.png)
 `go test ./exchange/ -run Kill9` does the same four times against the real
 binary, sometimes appending a torn record, and asserts that no acknowledged
 order is lost and that snapshot + replay equals full replay.

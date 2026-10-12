@@ -1,0 +1,42 @@
+### run 1
+host: Apple M4, 10 cores, darwin/arm64, go1.25.7
+
+1 matching only, 1 thread, orders in memory           5,526,105 orders/sec      181 ns/order
+2 + risk: reserve before, settle after                1,875,079 orders/sec      533 ns/order
+3 + sequencer + journal, no fsync                     1,229,669 orders/sec   client p50 2.3ms   p99 10.7ms  | server p99 13.6ms  | fsync p50 –      p99 –
+4 + fsync, group commit                                 472,363 orders/sec   client p50 8.2ms   p99 17.3ms  | server p99 18.9ms  | fsync p50 3.9ms  p99 7.9ms
+5 + TCP gateway, separate process                       455,338 orders/sec   client p50 8.2ms   p99 18.0ms  | server p99 16.8ms  | fsync p50 3.9ms  p99 8.4ms
+6   at a fixed 10,000 orders/sec                         10,000 orders/sec   client p50 6.9ms   p99 56.9ms  | server p99 41.9ms  | fsync p50 3.9ms  p99 8.4ms
+6   at a fixed 50,000 orders/sec                         50,000 orders/sec   client p50 6.7ms   p99 60.7ms  | server p99 58.7ms  | fsync p50 3.9ms  p99 10.5ms
+6   at a fixed 100,000 orders/sec                        95,226 orders/sec   client p50 7.3ms   p99 353.5ms | server p99 184.5ms | fsync p50 3.9ms  p99 18.9ms
+6   at a fixed 200,000 orders/sec                       200,000 orders/sec   client p50 11.2ms  p99 395.1ms | server p99 83.9ms  | fsync p50 3.9ms  p99 29.4ms
+
+
+### run 2
+host: Apple M4, 10 cores, darwin/arm64, go1.25.7
+
+1 matching only, 1 thread, orders in memory           2,032,919 orders/sec      492 ns/order
+2 + risk: reserve before, settle after                1,451,708 orders/sec      689 ns/order
+3 + sequencer + journal, no fsync                       499,082 orders/sec   client p50 5.3ms   p99 54.0ms  | server p99 58.7ms  | fsync p50 –      p99 –
+4 + fsync, group commit                                 367,504 orders/sec   client p50 9.2ms   p99 37.5ms  | server p99 37.7ms  | fsync p50 4.2ms  p99 13.6ms
+5 + TCP gateway, separate process                       412,732 orders/sec   client p50 8.3ms   p99 40.7ms  | server p99 37.7ms  | fsync p50 3.9ms  p99 12.6ms
+6   at a fixed 10,000 orders/sec                         10,000 orders/sec   client p50 7.3ms   p99 119.6ms | server p99 117.4ms | fsync p50 3.9ms  p99 9.4ms
+6   at a fixed 50,000 orders/sec                         50,000 orders/sec   client p50 7.9ms   p99 395.8ms | server p99 369.1ms | fsync p50 3.9ms  p99 29.4ms
+6   at a fixed 100,000 orders/sec                       100,000 orders/sec   client p50 8.7ms   p99 791.4ms | server p99 201.3ms | fsync p50 3.9ms  p99 33.6ms
+6   at a fixed 200,000 orders/sec                       200,000 orders/sec   client p50 11.6ms  p99 427.6ms | server p99 75.5ms  | fsync p50 4.7ms  p99 21.0ms
+
+
+### run 3
+host: Apple M4, 10 cores, darwin/arm64, go1.25.7
+
+1 matching only, 1 thread, orders in memory           2,733,835 orders/sec      366 ns/order
+2 + risk: reserve before, settle after                  889,369 orders/sec     1124 ns/order
+3 + sequencer + journal, no fsync                       903,292 orders/sec   client p50 3.5ms   p99 17.2ms  | server p99 18.9ms  | fsync p50 –      p99 –
+4 + fsync, group commit                                 467,009 orders/sec   client p50 8.2ms   p99 18.4ms  | server p99 18.9ms  | fsync p50 3.9ms  p99 7.3ms
+5 + TCP gateway, separate process                       275,751 orders/sec   client p50 9.7ms   p99 101.0ms | server p99 100.7ms | fsync p50 4.2ms  p99 41.9ms
+6   at a fixed 10,000 orders/sec                         10,000 orders/sec   client p50 7.0ms   p99 56.7ms  | server p99 54.5ms  | fsync p50 3.9ms  p99 8.4ms
+6   at a fixed 50,000 orders/sec                         50,000 orders/sec   client p50 6.6ms   p99 13.8ms  | server p99 13.6ms  | fsync p50 3.9ms  p99 6.8ms
+6   at a fixed 100,000 orders/sec                       100,000 orders/sec   client p50 7.9ms   p99 41.1ms  | server p99 31.5ms  | fsync p50 3.9ms  p99 11.5ms
+6   at a fixed 200,000 orders/sec                       199,999 orders/sec   client p50 7.7ms   p99 175.3ms | server p99 50.3ms  | fsync p50 3.9ms  p99 9.4ms
+
+

@@ -11,8 +11,8 @@ go build -o "$BIN/loadgen" ./cmd/loadgen
 
 wait_up() { for _ in $(seq 1 200); do curl -sf -o /dev/null 127.0.0.1:9101/state && return; sleep 0.05; done; echo "exchange did not start"; exit 1; }
 
-echo "== start exchange (fsync on, snapshot every 1M commands)"
-"$BIN/exchange" -dir "$DATA" -snapshot-every 1000000 2>&1 | sed 's/^/   [exchange] /' &
+echo "== start exchange (fsync on, snapshot every 50k commands)"
+"$BIN/exchange" -dir "$DATA" -snapshot-every 50000 2>&1 | sed -l 's/^/   [exchange] /' &
 wait_up
 
 echo "== send load from a separate process, then kill -9 the exchange mid-stream"
@@ -28,7 +28,7 @@ echo "== offline check on the crashed data: newest snapshot + journal tail vs th
 "$BIN/exchange" -dir "$DATA" -verify
 
 echo "== restart: newest snapshot + journal tail"
-"$BIN/exchange" -dir "$DATA" -snapshot-every 1000000 2>&1 | sed 's/^/   [exchange] /' &
+"$BIN/exchange" -dir "$DATA" -snapshot-every 50000 2>&1 | sed -l 's/^/   [exchange] /' &
 wait_up
 curl -s 127.0.0.1:9101/state | grep -E '"(seq|state_hash|resting_orders|snapshot_seq|replayed_from_journal|torn_tail_bytes_truncated|took_ms)"'
 pkill -f "$BIN/exchange"; sleep 1
