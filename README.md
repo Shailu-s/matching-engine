@@ -12,8 +12,9 @@ its own, so each number says exactly what it includes.
 | Latency at a steady 50K orders/sec | p50 5.5-7 ms, bounded below by one ~4 ms fsync |
 | Recovery after kill -9 | snapshot + journal tail, state hash identical |
 
-The ranges cover every run, including runs with other workloads on the
-machine. Go, standard library only.
+Ranges span runs on a quiet and a busy machine; one run under heavy
+background load measured 276K end to end. Every run is in
+[docs/ladder-runs.txt](docs/ladder-runs.txt). Go, standard library only.
 
 **Live demo:** https://matching-engine-ydj6.onrender.com (free tier, the
 first load after idle takes ~50 s). Opening the page runs a live benchmark on
