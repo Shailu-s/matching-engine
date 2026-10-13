@@ -7,14 +7,14 @@ its own, so each number says exactly what it includes.
 
 | Measured on an Apple M4 laptop | |
 |---|---|
-| Matching core, one thread, orders in memory | 2.0-5.5M orders/sec |
-| End to end: TCP, risk, matching, fsync before every ack | 410-580K orders/sec |
-| Latency at a steady 50K orders/sec | p50 5.5-7 ms, bounded below by one ~4 ms fsync |
+| Matching core, one thread, orders in memory | 5.2-6.3M orders/sec |
+| End to end: TCP, risk, matching, fsync before every ack | 501-513K orders/sec |
+| Latency at a steady 10K-200K orders/sec | p50 5-7 ms, p99 8-14 ms |
 | Recovery after kill -9 | snapshot + journal tail, state hash identical |
 
-Ranges span runs on a quiet and a busy machine; one run under heavy
-background load measured 276K end to end. Every run is in
-[docs/ladder-runs.txt](docs/ladder-runs.txt). Go, standard library only.
+Three runs on a quiet laptop (Docker and other apps closed). Earlier runs
+on a busy machine measured less and had p99 spikes of 50-800 ms; every run,
+busy and quiet, is in [docs/ladder-runs.txt](docs/ladder-runs.txt). Go, standard library only.
 
 **Live demo:** https://matching-engine-ydj6.onrender.com (free tier, the
 first load after idle takes ~50 s). Opening the page runs a live benchmark on
@@ -77,20 +77,19 @@ their latency is mostly queueing: 4,096 in flight / throughput. Rung 6 sends
 on a clock and measures from the scheduled send time, so a stalled server
 can't hide by slowing the client (coordinated omission). The table also
 shows latency measured inside the server and the fsync time itself: on
-macOS `fsync` is a full flush (`F_FULLFSYNC`), typically ~3-4 ms with
-occasional 30-130 ms stalls, and those stalls are where the p99 tail comes
-from.
+macOS `fsync` is a full flush (`F_FULLFSYNC`), typically ~3-4 ms. The p50
+sits near one and a half flushes, because an order waits for the flush in
+progress and then its own.
 
 ![benchmark ladder](docs/ladder.png)
 
-One run, with other workloads active on the laptop; all three runs are in
-[docs/ladder-runs.txt](docs/ladder-runs.txt). Medians are stable across
-runs: end to end 410-460K orders/sec (up to 580K on a quiet machine), p50
-6-8 ms at fixed rates. The p99 is not stable on this laptop: it follows the
-fsync tail, and macOS flushes (`F_FULLFSYNC`) occasionally stall for tens of
-milliseconds. Every order queued behind a stalled flush waits for it, which
-is why production venues replicate the journal to a second machine's memory
-instead of putting a local fsync on the critical path.
+Run 1 of three on a quiet laptop; all runs are in
+[docs/ladder-runs.txt](docs/ladder-runs.txt). Across the three: end to end
+501-513K orders/sec, p50 5-7 ms and p99 8-14 ms at every fixed rate. On a
+busy machine (Docker and other apps running) the same p99 reached
+50-800 ms: every order queued behind a slow flush waits for it. That is why
+production venues replicate the journal to a second machine's memory instead
+of putting a local fsync on the critical path.
 
 ### Crash test
 

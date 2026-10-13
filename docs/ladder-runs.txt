@@ -1,4 +1,44 @@
-### run 1
+# Quiet machine, 2026-10-13: Docker and other apps closed, laptop on battery, Low Power Mode off.
+# Run 3 started late with load 5.3 (another process was busy); its rung 3 (157K) is an outlier.
+
+### quiet run 1  ({ 2.62 3.07 3.93 } load avg at start)
+host: Apple M4, 10 cores, darwin/arm64, go1.25.7
+1 matching only, 1 thread, orders in memory           6,345,854 orders/sec      158 ns/order
+2 + risk: reserve before, settle after                3,688,156 orders/sec      271 ns/order
+3 + sequencer + journal, no fsync                     1,701,855 orders/sec   client p50 2.1ms   p99 5.6ms   | server p99 6.8ms   | fsync p50 –      p99 –
+4 + fsync, group commit                                 505,981 orders/sec   client p50 8.0ms   p99 13.8ms  | server p99 14.7ms  | fsync p50 3.7ms  p99 4.7ms
+5 + TCP gateway, separate process                       507,899 orders/sec   client p50 8.0ms   p99 13.3ms  | server p99 14.7ms  | fsync p50 3.7ms  p99 4.7ms
+6   at a fixed 10,000 orders/sec                         10,000 orders/sec   client p50 6.5ms   p99 8.7ms   | server p99 7.9ms   | fsync p50 3.9ms  p99 4.2ms
+6   at a fixed 50,000 orders/sec                         50,000 orders/sec   client p50 6.3ms   p99 9.4ms   | server p99 8.4ms   | fsync p50 3.9ms  p99 4.2ms
+6   at a fixed 100,000 orders/sec                       100,000 orders/sec   client p50 5.1ms   p99 8.0ms   | server p99 7.9ms   | fsync p50 2.9ms  p99 3.9ms
+6   at a fixed 200,000 orders/sec                       200,000 orders/sec   client p50 6.3ms   p99 8.5ms   | server p99 8.4ms   | fsync p50 3.9ms  p99 4.2ms
+
+### quiet run 2  ({ 1.67 2.55 3.56 } load avg at start)
+host: Apple M4, 10 cores, darwin/arm64, go1.25.7
+1 matching only, 1 thread, orders in memory           6,135,101 orders/sec      163 ns/order
+2 + risk: reserve before, settle after                3,767,912 orders/sec      265 ns/order
+3 + sequencer + journal, no fsync                     1,671,398 orders/sec   client p50 2.2ms   p99 6.1ms   | server p99 7.3ms   | fsync p50 –      p99 –
+4 + fsync, group commit                                 520,441 orders/sec   client p50 7.9ms   p99 12.6ms  | server p99 13.6ms  | fsync p50 3.7ms  p99 5.2ms
+5 + TCP gateway, separate process                       512,525 orders/sec   client p50 7.4ms   p99 17.0ms  | server p99 16.8ms  | fsync p50 3.7ms  p99 7.3ms
+6   at a fixed 10,000 orders/sec                         10,000 orders/sec   client p50 6.5ms   p99 13.8ms  | server p99 12.6ms  | fsync p50 3.9ms  p99 6.8ms
+6   at a fixed 50,000 orders/sec                         50,000 orders/sec   client p50 5.5ms   p99 8.4ms   | server p99 7.9ms   | fsync p50 2.9ms  p99 4.7ms
+6   at a fixed 100,000 orders/sec                       100,000 orders/sec   client p50 5.2ms   p99 8.6ms   | server p99 8.4ms   | fsync p50 2.9ms  p99 4.2ms
+6   at a fixed 200,000 orders/sec                       200,000 orders/sec   client p50 5.6ms   p99 8.7ms   | server p99 8.4ms   | fsync p50 2.9ms  p99 4.2ms
+
+### quiet run 3  ({ 5.32 3.46 3.73 } load avg at start)
+host: Apple M4, 10 cores, darwin/arm64, go1.25.7
+1 matching only, 1 thread, orders in memory           5,233,499 orders/sec      191 ns/order
+2 + risk: reserve before, settle after                3,052,340 orders/sec      328 ns/order
+3 + sequencer + journal, no fsync                       157,478 orders/sec   client p50 4.1ms   p99 38.2ms  | server p99 37.7ms  | fsync p50 –      p99 –
+4 + fsync, group commit                                 511,326 orders/sec   client p50 7.8ms   p99 14.5ms  | server p99 15.7ms  | fsync p50 3.7ms  p99 6.8ms
+5 + TCP gateway, separate process                       500,891 orders/sec   client p50 7.9ms   p99 15.4ms  | server p99 15.7ms  | fsync p50 3.7ms  p99 7.3ms
+6   at a fixed 10,000 orders/sec                         10,000 orders/sec   client p50 6.7ms   p99 13.6ms  | server p99 12.6ms  | fsync p50 3.9ms  p99 7.9ms
+6   at a fixed 50,000 orders/sec                         50,000 orders/sec   client p50 6.4ms   p99 11.6ms  | server p99 10.5ms  | fsync p50 3.9ms  p99 6.8ms
+6   at a fixed 100,000 orders/sec                       100,000 orders/sec   client p50 6.1ms   p99 10.6ms  | server p99 10.5ms  | fsync p50 3.7ms  p99 6.3ms
+6   at a fixed 200,000 orders/sec                       199,725 orders/sec   client p50 6.6ms   p99 13.7ms  | server p99 12.6ms  | fsync p50 3.7ms  p99 6.8ms
+
+# Busy machine, 2026-10-12/13: Docker (10 containers) and other apps running.
+### busy run 1
 host: Apple M4, 10 cores, darwin/arm64, go1.25.7
 
 1 matching only, 1 thread, orders in memory           5,526,105 orders/sec      181 ns/order
@@ -12,7 +52,7 @@ host: Apple M4, 10 cores, darwin/arm64, go1.25.7
 6   at a fixed 200,000 orders/sec                       200,000 orders/sec   client p50 11.2ms  p99 395.1ms | server p99 83.9ms  | fsync p50 3.9ms  p99 29.4ms
 
 
-### run 2
+### busy run 2
 host: Apple M4, 10 cores, darwin/arm64, go1.25.7
 
 1 matching only, 1 thread, orders in memory           2,032,919 orders/sec      492 ns/order
@@ -26,7 +66,7 @@ host: Apple M4, 10 cores, darwin/arm64, go1.25.7
 6   at a fixed 200,000 orders/sec                       200,000 orders/sec   client p50 11.6ms  p99 427.6ms | server p99 75.5ms  | fsync p50 4.7ms  p99 21.0ms
 
 
-### run 3
+### busy run 3
 host: Apple M4, 10 cores, darwin/arm64, go1.25.7
 
 1 matching only, 1 thread, orders in memory           2,733,835 orders/sec      366 ns/order
